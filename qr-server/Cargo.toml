@@ -1,6 +1,15 @@
 [package]
 name = "qr-server"
-version = "0.1.0"
-edition = "2024"
+description = "HTTP servive for generating QR codes. Depends on qr-core and qr-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
+qr-core = { path = "../qr-core", version = "0.1.0" }
+qr-render = { path = "../qr-render", version = "0.1.0" }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }

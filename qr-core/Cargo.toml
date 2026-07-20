@@ -1,6 +1,11 @@
 [package]
 name = "qr-core"
-version = "0.1.0"
-edition = "2024"
+description = "ISO/IEC 18004-compliant QR code encoder: takes in text input, outputs QR symbol matrix"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]

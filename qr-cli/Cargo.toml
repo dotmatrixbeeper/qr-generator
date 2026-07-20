@@ -1,6 +1,6 @@
 [package]
-name = "qr-render"
-description = "Renders qr-core symbol matrices to SVG and PNG"
+name = "qr-cli"
+description = "Command-line interface for generating QR codes"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,11 +8,11 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[[bin]]
+name = "qr"
+path = "src/main.rs"
+
 [dependencies]
 qr-core = { path = "../qr-core", version = "0.1.0" }
-image = { version = "0.25", optional = true }
-
-[features]
-default = ["svg", "png"]
-svg = []
-png = ["dep:image"]
+qr-render = { path = "../qr-render", version = "0.1.0" }
+clap = { version = "4", features = ["derive"] }
