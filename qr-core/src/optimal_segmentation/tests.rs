@@ -67,7 +67,7 @@ fn describe(seg: &OptimalSegment, input: &str) -> String {
 
 fn report(input: &str, seg: &OptimalSegment) {
     note!("input    {}", preview(input));
-    note!("picked   version {} at ECC {:?}", seg.version, seg.ecc_level);
+    note!("picked   version {} at ECC {:?}", seg.version.get(), seg.ecc_level);
     if seg.mode_hint.is_empty() {
         note!("segments <none>");
     } else {
@@ -90,9 +90,38 @@ fn report(input: &str, seg: &OptimalSegment) {
 // helpers
 // ---------------------------------------------------------------------------
 
-fn segment(input: &str, ecc: ECCLevel) -> OptimalSegment {
-    OptimalSegment::create_segmentation(input, ecc)
+fn segment(input: &str) -> OptimalSegment {
+    OptimalSegment::create_segmentation(input)
         .unwrap_or_else(|e| panic!("expected {input:?} to be encodable, got {e:?}"))
+}
+
+/// Bits the encoder will actually emit for `seg`: per segment a mode indicator,
+/// a count indicator sized for the version block, and the character data packed
+/// per ISO/IEC 18004 (digits in triples, alphanumerics in pairs).
+fn encoded_bits(input: &str, seg: &OptimalSegment) -> u32 {
+    let block = VERSION_BLOCKS.iter().position(|[lo, hi]| (*lo..=*hi).contains(&seg.version.get())).unwrap();
+    let chars: Vec<char> = input.chars().collect();
+    seg.mode_hint
+        .iter()
+        .map(|s| {
+            let n = (s.end - s.start + 1) as u32;
+            let data = match s.mode {
+                Mode::Numeric => (n / 3) * 10 + [0, 4, 7][(n % 3) as usize],
+                Mode::Alphanumeric => (n / 2) * 11 + (n % 2) * 6,
+                Mode::Byte => chars[s.start..=s.end].iter().map(|c| c.len_utf8() as u32 * 8).sum(),
+                Mode::Kanji => n * 13,
+            };
+            MODE_INDICATOR as u32 + MODE_CCI[block][s.mode as usize] + data
+        })
+        .sum()
+}
+
+fn data_bits(version: Version, ecc: ECCLevel) -> u32 {
+    lookups::version_data_bits(version, ecc) as u32
+}
+
+fn version(v: u8) -> Version {
+    Version::new(v).unwrap()
 }
 
 /// Every character of `input` must belong to exactly one segment, the segments
@@ -292,7 +321,7 @@ fn pure_numeric_is_one_numeric_segment() {
     checking!("segmentation", "an all-digit string stays in one numeric segment");
 
     let input = "12345678";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     assert_eq!(modes(&seg), vec![Mode::Numeric]);
     assert_eq!(bounds(&seg), vec![(0, 7)]);
@@ -306,7 +335,7 @@ fn pure_alphanumeric_is_one_alphanumeric_segment() {
     checking!("segmentation", "uppercase and space stay in one alphanumeric segment");
 
     let input = "HELLO WORLD";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     assert_eq!(modes(&seg), vec![Mode::Alphanumeric]);
     assert_eq!(bounds(&seg), vec![(0, 10)]);
@@ -320,7 +349,7 @@ fn lowercase_falls_back_to_byte() {
     checking!("segmentation", "lowercase is outside the alphanumeric charset, so it must fall back to byte");
 
     let input = "hello";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     assert_eq!(modes(&seg), vec![Mode::Byte]);
     assert_eq!(bounds(&seg), vec![(0, 4)]);
@@ -333,7 +362,7 @@ fn pure_kanji_is_one_kanji_segment() {
     checking!("segmentation", "kanji at 13 bits beats byte at 24 bits per char, so it wins outright");
 
     let input = "こんにちは世界";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     assert_eq!(modes(&seg), vec![Mode::Kanji]);
     assert_eq!(bounds(&seg), vec![(0, 6)]);
@@ -347,7 +376,7 @@ fn non_bmp_chars_use_byte_mode() {
     checking!("segmentation", "chars outside the BMP have no kanji entry and must land in byte mode");
 
     let input = "🦀🦀";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     assert_eq!(modes(&seg), vec![Mode::Byte]);
     assert_partitions(input, &seg);
@@ -365,10 +394,10 @@ fn single_character_inputs() {
         ("a", Mode::Byte),
         ("🦀", Mode::Byte),
     ] {
-        let seg = segment(input, ECCLevel::L);
+        let seg = segment(input);
         assert_eq!(modes(&seg), vec![expected], "input {input:?}");
         assert_eq!(bounds(&seg), vec![(0, 0)], "input {input:?}");
-        note!("{:<6}  →  {:?}[0..=0]  version {}", format!("{input:?}"), expected, seg.version);
+        note!("{:<6}  →  {:?}[0..=0]  version {}", format!("{input:?}"), expected, seg.version.get());
     }
 
     done!("4 single-char inputs, each one segment at [0..=0]");
@@ -383,7 +412,7 @@ fn mixed_input_splits_on_exact_boundaries() {
     checking!("segmentation", "a three-mode string splits on the exact character where the mode changes");
 
     let input = "AAAAAAAAAAAAAA12345678aaaaaaaaaaaa";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     note!("expected [0..=13] [14..=21] [22..=33] — an off-by-one here means segments overlap");
     assert_eq!(modes(&seg), vec![Mode::Alphanumeric, Mode::Numeric, Mode::Byte]);
@@ -398,7 +427,7 @@ fn segments_are_returned_in_reading_order() {
     checking!("segmentation", "backtracking collects segments last-to-first, so the result must be reversed");
 
     let input = "AAAAAAAAAAAAAA12345678aaaaaaaaaaaa";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     let starts: Vec<usize> = seg.mode_hint.iter().map(|s| s.start).collect();
     note!("starts   {starts:?}");
     let mut sorted = starts.clone();
@@ -414,7 +443,7 @@ fn four_way_mixed_input_partitions_cleanly() {
     checking!("segmentation", "all four modes in one string still tile the input exactly");
 
     let input = "abc123こんにちは456ABCDEF";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     assert_partitions(input, &seg);
     assert!(seg.mode_hint.len() > 1, "expected several segments, got {:?}", modes(&seg));
@@ -431,7 +460,7 @@ fn short_digit_run_stays_inside_an_alphanumeric_segment() {
     checking!("segmentation", "switching costs a mode + count indicator, more than a 2-digit run can save");
 
     let input = "ABCDEFGHIJ12ABCDEFGHIJ";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     note!("a 2-digit run saves ~3 bits but a switch costs 13+ — staying put is cheaper");
     assert_eq!(modes(&seg), vec![Mode::Alphanumeric], "a 2-digit run should not be split out");
@@ -445,7 +474,7 @@ fn long_digit_run_is_split_out_of_an_alphanumeric_segment() {
     checking!("segmentation", "a long enough digit run does pay for its own segment");
 
     let input = "ABCDEFGHIJ1234567890123456789012345678901234567890ABCDEFGHIJ";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     note!("a 40-digit run saves ~60 bits, comfortably more than the switch costs");
     assert_eq!(modes(&seg), vec![Mode::Alphanumeric, Mode::Numeric, Mode::Alphanumeric]);
@@ -460,26 +489,98 @@ fn many_alternating_runs_still_partition() {
     checking!("segmentation", "repeated mode changes must not drift the cursors out of alignment");
 
     let input = "1234567890abcdefghij1234567890ABCDEFGHIJ1234567890こんにちは世界1234567890";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     assert_partitions(input, &seg);
 
     done!("{} alternating runs traced back without drift", seg.mode_hint.len());
 }
 
-#[test]
-fn partitions_hold_across_every_ecc_level() {
-    checking!("segmentation", "the same string must partition cleanly at all four ECC levels");
+// ---------------------------------------------------------------------------
+// ECC level selection
+// ---------------------------------------------------------------------------
 
-    let input = "abc123こんにちは456ABCDEF hello WORLD 9876543210";
-    note!("input    {}", preview(input));
-    for ecc in [ECCLevel::L, ECCLevel::M, ECCLevel::Q, ECCLevel::H] {
-        let seg = segment(input, ecc);
-        note!("{:?}  →  version {:<2}  {}", ecc, seg.version, describe(&seg, input));
-        assert_partitions(input, &seg);
+#[test]
+fn ecc_is_raised_as_far_as_the_slack_allows() {
+    checking!("ecc", "after picking the smallest version at L, the level climbs while the payload still fits");
+
+    let inputs: Vec<String> = vec![
+        "1".into(),
+        "HELLO WORLD".into(),
+        "abc123こんにちは456ABCDEF hello WORLD 9876543210".into(),
+        "1".repeat(41),   // 1-L holds 41 digits: zero slack
+        "1".repeat(34),   // 1-M holds 34
+        "1".repeat(27),   // 1-Q holds 27
+        "1".repeat(17),   // 1-H holds 17
+        "1".repeat(500),
+        "a".repeat(2953), // fills 40-L exactly
+    ];
+
+    for input in &inputs {
+        let seg = segment(input);
+        let bits = encoded_bits(input, &seg);
+        let capacity = data_bits(seg.version, seg.ecc_level);
+        assert!(
+            bits <= capacity,
+            "{}: {bits} bits do not fit {}-{:?} ({capacity} bits)",
+            preview(input), seg.version.get(), seg.ecc_level
+        );
+
+        let mut next = seg.ecc_level;
+        next.raise(1);
+        if next as u8 != seg.ecc_level as u8 {
+            let next_capacity = data_bits(seg.version, next);
+            assert!(
+                bits > next_capacity,
+                "{}: {bits} bits would also fit {}-{next:?} ({next_capacity} bits) but {:?} was chosen",
+                preview(input), seg.version.get(), seg.ecc_level
+            );
+        }
+        note!(
+            "{:<28}  →  {:>5} bits  in  v{:<2} {:?} ({capacity} bits)",
+            preview(input), bits, seg.version.get(), seg.ecc_level
+        );
     }
 
-    done!("L, M, Q and H all partition the input correctly");
+    done!("{} inputs land on the highest ECC level their version can hold", inputs.len());
+}
+
+#[test]
+fn ecc_boundaries_at_version_1_numeric() {
+    checking!("ecc", "1-L/M/Q/H hold 41/34/27/17 digits, so each count lands exactly on its level");
+
+    for (digits, expected) in [(41, ECCLevel::L), (34, ECCLevel::M), (27, ECCLevel::Q), (17, ECCLevel::H)] {
+        let seg = segment(&"1".repeat(digits));
+        assert_eq!(seg.version.get(), 1, "{digits} digits should fit version 1");
+        assert_eq!(seg.ecc_level as u8, expected as u8, "{digits} digits should pick {expected:?}, got {:?}", seg.ecc_level);
+        note!("{digits:>2} digits  →  1-{:?}", seg.ecc_level);
+    }
+
+    done!("all four ISO table 7 boundaries for version 1 numeric hit their level");
+}
+
+#[test]
+fn ecc_raise_terminates_at_h() {
+    checking!("ecc", "a tiny payload has slack for every level; the climb must stop at H, not spin");
+
+    let seg = segment("1");
+    report("1", &seg);
+    assert_eq!(seg.ecc_level as u8, ECCLevel::H as u8, "got {:?}", seg.ecc_level);
+
+    done!("saturated at H");
+}
+
+#[test]
+fn full_symbol_stays_at_ecc_l() {
+    checking!("ecc", "a payload that exactly fills 40-L has no slack to trade for error correction");
+
+    let input = "1".repeat(7089);
+    let seg = segment(&input);
+    note!("7089 digits  →  version {} at {:?}", seg.version.get(), seg.ecc_level);
+    assert_eq!(seg.version.get(), 40);
+    assert_eq!(seg.ecc_level as u8, ECCLevel::L as u8, "got {:?}", seg.ecc_level);
+
+    done!("stayed at L");
 }
 
 // ---------------------------------------------------------------------------
@@ -491,24 +592,28 @@ fn smallest_fitting_version_is_chosen() {
     checking!("version", "the smallest symbol that fits must win, never a larger one");
 
     for input in ["1", "HELLO WORLD"] {
-        let seg = segment(input, ECCLevel::L);
-        assert_eq!(seg.version, 1, "input {input:?}");
-        note!("{:<14}  →  version {}", format!("{input:?}"), seg.version);
+        let seg = segment(input);
+        assert_eq!(seg.version.get(), 1, "input {input:?}");
+        note!("{:<14}  →  version {}", format!("{input:?}"), seg.version.get());
     }
 
     done!("both short payloads fit version 1");
 }
 
 #[test]
-fn a_higher_ecc_level_needs_a_higher_version() {
-    checking!("version", "ECC steals data capacity, so the same payload needs a bigger symbol at H");
+fn version_is_chosen_at_ecc_l_before_raising() {
+    checking!("version", "the ECC climb must never bump the version: the symbol is the smallest that fits at L");
 
-    let low = segment(&"1".repeat(500), ECCLevel::L).version;
-    let high = segment(&"1".repeat(500), ECCLevel::H).version;
-    note!("500 digits  →  L: version {low}   H: version {high}");
-    assert!(high > low, "H ({high}) should need a larger symbol than L ({low})");
+    for len in [1, 50, 500, 2000] {
+        let input = "1".repeat(len);
+        let seg = segment(&input);
+        let bits = encoded_bits(&input, &seg);
+        let smallest_at_l = (Version::MIN..=Version::MAX).find(|v| bits <= data_bits(version(*v), ECCLevel::L)).unwrap();
+        assert_eq!(seg.version.get(), smallest_at_l, "{len} digits");
+        note!("{len:>4} digits  →  version {:<2} at {:?}  (smallest fitting at L: {smallest_at_l})", seg.version.get(), seg.ecc_level);
+    }
 
-    done!("H needs {} more version(s) than L", high - low);
+    done!("version matches the L-level minimum across 4 lengths");
 }
 
 #[test]
@@ -517,7 +622,7 @@ fn version_grows_monotonically_with_input_length() {
 
     let mut previous = 0;
     for len in [1, 50, 200, 500, 1000, 2000, 4000, 7089] {
-        let version = segment(&"1".repeat(len), ECCLevel::L).version;
+        let version = segment(&"1".repeat(len)).version.get();
         assert!(version >= previous, "{len} digits picked v{version} after v{previous}");
         assert!((1..=40).contains(&version), "v{version} is out of range");
         note!("{len:>5} digits  →  version {version}");
@@ -531,9 +636,9 @@ fn version_grows_monotonically_with_input_length() {
 fn versions_are_found_in_every_version_block() {
     checking!("version", "the DP re-runs per block because the count indicator widens at v10 and v27");
 
-    let small = segment(&"1".repeat(10), ECCLevel::L).version;
-    let medium = segment(&"1".repeat(600), ECCLevel::L).version;
-    let large = segment(&"1".repeat(3400), ECCLevel::L).version;
+    let small = segment(&"1".repeat(10)).version.get();
+    let medium = segment(&"1".repeat(600)).version.get();
+    let large = segment(&"1".repeat(3400)).version.get();
 
     note!("   10 digits  →  version {small:<2}  (block 1, versions 1-9)");
     note!("  600 digits  →  version {medium:<2}  (block 2, versions 10-26)");
@@ -553,12 +658,12 @@ fn versions_are_found_in_every_version_block() {
 /// Asserts the documented 40-L character capacity for a mode: `n` fits, `n + 1` does not.
 fn assert_capacity_boundary(label: &str, max: usize, build: impl Fn(usize) -> String) {
     let fits = build(max);
-    let seg = segment(&fits, ECCLevel::L);
-    assert_eq!(seg.version, 40, "{label}: {max} chars should fill version 40");
-    note!("{label:<13} {max:>5} chars  →  version {}  (fits)", seg.version);
+    let seg = segment(&fits);
+    assert_eq!(seg.version.get(), 40, "{label}: {max} chars should fill version 40");
+    note!("{label:<13} {max:>5} chars  →  version {}  (fits)", seg.version.get());
 
     let over = build(max + 1);
-    let result = OptimalSegment::create_segmentation(&over, ECCLevel::L);
+    let result = OptimalSegment::create_segmentation(&over);
     assert!(result.is_err(), "{label}: {} chars should not fit", max + 1);
     note!("{label:<13} {:>5} chars  →  InputTooLong  (rejected)", max + 1);
 }
@@ -595,22 +700,11 @@ fn kanji_capacity_boundary() {
 fn over_capacity_reports_input_too_long() {
     checking!("capacity", "a payload past every version reports InputTooLong rather than panicking");
 
-    let err = OptimalSegment::create_segmentation(&"1".repeat(20000), ECCLevel::L).unwrap_err();
+    let err = OptimalSegment::create_segmentation(&"1".repeat(20000)).unwrap_err();
     note!("20000 digits  →  {err:?} (\"{err}\")");
     assert!(matches!(err, QrError::InputTooLong), "got {err:?}");
 
     done!("all three version blocks exhausted, error returned cleanly");
-}
-
-#[test]
-fn high_ecc_capacity_is_lower_than_low_ecc() {
-    checking!("capacity", "a payload that exactly fills 40-L must overflow 40-H");
-
-    let result = OptimalSegment::create_segmentation(&"1".repeat(7089), ECCLevel::H);
-    note!("7089 digits  →  L: version 40   H: {}", if result.is_err() { "InputTooLong" } else { "fits (wrong)" });
-    assert!(result.is_err());
-
-    done!("ECC level correctly reduces usable capacity");
 }
 
 // ---------------------------------------------------------------------------
@@ -621,7 +715,7 @@ fn high_ecc_capacity_is_lower_than_low_ecc() {
 fn empty_input_does_not_panic() {
     checking!("edge case", "an empty string skips the backtracking loop entirely, where the final push used to underflow");
 
-    let seg = segment("", ECCLevel::L);
+    let seg = segment("");
     report("", &seg);
     assert!(seg.mode_hint.is_empty(), "empty input should produce no segments, got {:?}", modes(&seg));
 
@@ -634,7 +728,7 @@ fn backtracking_never_underflows_on_short_inputs() {
 
     for len in 1..8 {
         for (label, input) in [("digits", "1".repeat(len)), ("bytes", "a".repeat(len))] {
-            let seg = segment(&input, ECCLevel::L);
+            let seg = segment(&input);
             note!("{len} {label:<7}  →  {}", describe(&seg, &input));
             assert_partitions(&input, &seg);
         }
@@ -648,7 +742,7 @@ fn mode_switch_on_the_second_character_is_handled() {
     checking!("edge case", "a switch recorded at column 1 would drive end_cursor to 0 in the final push");
 
     for input in ["1a", "a1", "A1", "1A", "aA", "1こ", "こ1"] {
-        let seg = segment(input, ECCLevel::L);
+        let seg = segment(input);
         note!("{:<8}  →  {}", format!("{input:?}"), describe(&seg, input));
         assert_partitions(input, &seg);
     }
@@ -661,13 +755,13 @@ fn whitespace_and_punctuation_are_placed_correctly() {
     checking!("segmentation", "punctuation splits along the alphanumeric charset boundary");
 
     let input = "HELLO $%*+-./: WORLD";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     assert_eq!(modes(&seg), vec![Mode::Alphanumeric], "all of these are in the alphanumeric charset");
     ok!("$ % * + - . / : and space are all charset members");
 
     let input = "hello, world!";
-    let seg = segment(input, ECCLevel::L);
+    let seg = segment(input);
     report(input, &seg);
     assert_eq!(modes(&seg), vec![Mode::Byte], "comma and bang are byte-only");
     ok!("',' and '!' are not, forcing byte mode");

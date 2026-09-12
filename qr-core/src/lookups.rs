@@ -1,4 +1,4 @@
-use crate::{encoding::ECCLevel, errors::QrError};
+use crate::encoding::{ECCLevel, Version};
 
 static ALPHANUMERIC: [u8; 128] = [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 36, 255, 255, 255, 37, 38, 255, 255, 255, 255, 39, 40, 255, 41, 42, 43, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 44, 255, 255, 255, 255, 255, 255, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
 
@@ -116,18 +116,14 @@ static VERSIONS: [(u16, u16, u16); 160] = [
     (177, 23648, 750), (177, 18672, 1372), (177, 13328, 2040), (177, 10208, 2430),
 ];
 
-pub fn version_dimension(version: usize) -> Result<u16, QrError> {
-	if 1 > version || version > 40 {
-		Err(QrError::InvalidVersion(version))
-	} else {
-		Ok(VERSIONS[(version - 1) * 4].0)
-	}
+pub fn version_dimension(version: Version) -> u16 {
+    VERSIONS[version.index() * 4].0
 }
 
-pub fn version_data_bits(version: usize, ecc: ECCLevel) -> Result<u16, QrError> {
-	if 1 > version || version > 40 {
-		Err(QrError::InvalidVersion(version))
-    } else {
-		Ok(VERSIONS[(version - 1) * 4 + (ecc.error_index() as usize)].1)
-	}
+pub fn version_data_bits(version: Version, ecc: ECCLevel) -> u16 {
+    VERSIONS[version.index() * 4 + (ecc as usize)].1
+}
+
+pub fn version_ec_cw(version: Version, ecc: ECCLevel) -> u16 {
+    VERSIONS[version.index() * 4 + (ecc as usize)].2
 }
