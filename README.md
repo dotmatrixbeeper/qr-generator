@@ -23,9 +23,9 @@ I use the following references to research, implement and take inspiration from,
 ## AI Use Disclosure
 I have used the following "AI" tools in the specified capacity.
 1. **Anthropic's Claude**:
-    a. Claude Code was used in [`optimal_segmentation.rs`](./qr-core/src/optimal_segmentation.rs) to correct the method `probe_ecc_level_raise`.
-    b. Claude Code was used in [`encoding.rs`](./qr-core/src/encoding.rs) to introduce the `Version` struct and remove redundant error handlings.
-    c. Claude chat was used to understand the Optimal Text Segmentation and develop the algorithm to implement.
-    d. Claude Code was used in [optimal_segmenation/tests.rs](./qr-core/src/optimal_segmentation/tests.rs) to write comprehensive test cases for all the text segmenation scenarios.
+    - Claude Code was used in [`optimal_segmentation.rs`](./qr-core/src/optimal_segmentation.rs) to correct the method `probe_ecc_level_raise`.
+    - Claude Code was used in [`encoding.rs`](./qr-core/src/encoding.rs) to introduce the `Version` struct and remove redundant error handlings.
+    - Claude chat was used to understand the Optimal Text Segmentation and develop the algorithm to implement.
+    - Claude Code was used in [optimal_segmenation/tests.rs](./qr-core/src/optimal_segmentation/tests.rs) to write comprehensive test cases for all the text segmenation scenarios.
 2. **Google's Gemini**:
-    a. Google's Gemini answers questions that you google about, so some sideline and Rust syntax research were done on Geimini in the way to normal googling.
+    - Google's Gemini answers questions that you google about, so some sideline and Rust syntax research were done on Geimini in the way to normal googling.
