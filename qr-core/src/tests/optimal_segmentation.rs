@@ -51,7 +51,7 @@ fn preview(s: &str) -> String {
     format!("\"{head}…{tail}\" ({} chars)", chars.len())
 }
 
-fn describe(seg: &OptimalSegment, input: &str) -> String {
+fn describe(seg: &OptimalSegmentHint, input: &str) -> String {
     let chars: Vec<char> = input.chars().collect();
     let body = seg
         .mode_hint
@@ -65,7 +65,7 @@ fn describe(seg: &OptimalSegment, input: &str) -> String {
     if body.is_empty() { "<no segments>".to_string() } else { body }
 }
 
-fn report(input: &str, seg: &OptimalSegment) {
+fn report(input: &str, seg: &OptimalSegmentHint) {
     note!("input    {}", preview(input));
     note!("picked   version {} at ECC {:?}", seg.version.get(), seg.ecc_level);
     if seg.mode_hint.is_empty() {
@@ -90,15 +90,15 @@ fn report(input: &str, seg: &OptimalSegment) {
 // helpers
 // ---------------------------------------------------------------------------
 
-fn segment(input: &str) -> OptimalSegment {
-    OptimalSegment::create_segmentation(input)
+fn segment(input: &str) -> OptimalSegmentHint {
+    OptimalSegmentHint::create_segmentation(input)
         .unwrap_or_else(|e| panic!("expected {input:?} to be encodable, got {e:?}"))
 }
 
 /// Bits the encoder will actually emit for `seg`: per segment a mode indicator,
 /// a count indicator sized for the version block, and the character data packed
 /// per ISO/IEC 18004 (digits in triples, alphanumerics in pairs).
-fn encoded_bits(input: &str, seg: &OptimalSegment) -> u32 {
+fn encoded_bits(input: &str, seg: &OptimalSegmentHint) -> u32 {
     let block = VERSION_BLOCKS.iter().position(|[lo, hi]| (*lo..=*hi).contains(&seg.version.get())).unwrap();
     let chars: Vec<char> = input.chars().collect();
     seg.mode_hint
@@ -111,7 +111,7 @@ fn encoded_bits(input: &str, seg: &OptimalSegment) -> u32 {
                 Mode::Byte => chars[s.start..=s.end].iter().map(|c| c.len_utf8() as u32 * 8).sum(),
                 Mode::Kanji => n * 13,
             };
-            MODE_INDICATOR as u32 + MODE_CCI[block][s.mode as usize] + data
+            MODE_INDICATOR_LEN as u32 + MODE_CCI_LEN[block][s.mode as usize] + data
         })
         .sum()
 }
@@ -127,7 +127,7 @@ fn version(v: u8) -> Version {
 /// Every character of `input` must belong to exactly one segment, the segments
 /// must be in reading order, and each character must be representable in the
 /// mode its segment claims.
-fn assert_partitions(input: &str, seg: &OptimalSegment) {
+fn assert_partitions(input: &str, seg: &OptimalSegmentHint) {
     let chars: Vec<char> = input.chars().collect();
     let mut cursor = 0;
 
@@ -152,11 +152,11 @@ fn assert_partitions(input: &str, seg: &OptimalSegment) {
     );
 }
 
-fn modes(seg: &OptimalSegment) -> Vec<Mode> {
+fn modes(seg: &OptimalSegmentHint) -> Vec<Mode> {
     seg.mode_hint.iter().map(|s| s.mode).collect()
 }
 
-fn bounds(seg: &OptimalSegment) -> Vec<(usize, usize)> {
+fn bounds(seg: &OptimalSegmentHint) -> Vec<(usize, usize)> {
     seg.mode_hint.iter().map(|s| (s.start, s.end)).collect()
 }
 
@@ -663,7 +663,7 @@ fn assert_capacity_boundary(label: &str, max: usize, build: impl Fn(usize) -> St
     note!("{label:<13} {max:>5} chars  →  version {}  (fits)", seg.version.get());
 
     let over = build(max + 1);
-    let result = OptimalSegment::create_segmentation(&over);
+    let result = OptimalSegmentHint::create_segmentation(&over);
     assert!(result.is_err(), "{label}: {} chars should not fit", max + 1);
     note!("{label:<13} {:>5} chars  →  InputTooLong  (rejected)", max + 1);
 }
@@ -700,7 +700,7 @@ fn kanji_capacity_boundary() {
 fn over_capacity_reports_input_too_long() {
     checking!("capacity", "a payload past every version reports InputTooLong rather than panicking");
 
-    let err = OptimalSegment::create_segmentation(&"1".repeat(20000)).unwrap_err();
+    let err = OptimalSegmentHint::create_segmentation(&"1".repeat(20000)).unwrap_err();
     note!("20000 digits  →  {err:?} (\"{err}\")");
     assert!(matches!(err, QrError::InputTooLong), "got {err:?}");
 

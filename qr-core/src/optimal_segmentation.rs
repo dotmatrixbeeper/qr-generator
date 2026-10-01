@@ -1,20 +1,8 @@
 use std::collections::VecDeque;
-use std::u32;
 
 use crate::errors::QrError;
-use crate::encoding::{ECCLevel, Mode, Version};
-use crate::lookups;
-
-static MODE_CCI: [[u32; 4]; 3] = [ 
-                                    [10,  9,  8,  8], 
-                                    [12, 11, 16, 10],
-                                    [14, 13, 16, 12]
-                                ];
-
-static VERSION_BLOCKS: [[u8; 2]; 3] = [[1, 9], [10, 26], [27, 40]];
-
-static MODE_INDICATOR: u8 = 4;
-
+use crate::qr_code::{ECCLevel, Mode, Version};
+use crate::lookups::{self, MODE_CCI_LEN, MODE_INDICATOR_LEN, VERSION_BLOCKS};
 #[derive(Debug, Clone, Copy)]
 struct Cell {
     mode: Mode,
@@ -29,25 +17,40 @@ impl Cell {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Segment {
+pub struct Segment {
     mode: Mode,
     start: usize,
     end: usize
 }
 
-#[derive(Debug)]
-struct OptimalSegment {
-    mode_hint: Vec<Segment>,
-    version: Version,
-    ecc_level: ECCLevel
-}
-
-impl OptimalSegment {
-    fn new(version: Version) -> Self {
-        OptimalSegment { mode_hint: Vec::new(), version, ecc_level: ECCLevel::L }
+impl Segment {
+    pub fn mode(&self) -> Mode {
+        self.mode
     }
 
-    fn create_segmentation(input: &str) -> Result<OptimalSegment, QrError> {
+    pub fn start(&self) -> usize {
+        self.start
+    }
+
+    pub fn end(&self) -> usize {
+        self.end
+    }
+}
+
+#[derive(Debug)]
+pub struct OptimalSegmentHint {
+    mode_hint: Vec<Segment>,
+    version: Version,
+    ecc_level: ECCLevel,
+    data_bit_len: u16
+}
+
+impl OptimalSegmentHint {
+    fn new(version: Version) -> Self {
+        OptimalSegmentHint { mode_hint: Vec::new(), version, ecc_level: ECCLevel::L, data_bit_len: 0 }
+    }
+
+    pub fn create_segmentation(input: &str) -> Result<OptimalSegmentHint, QrError> {
         let optimal_segment = execute_dp(input, 0)
             .or_else(|| execute_dp(input, 1))
             .or_else(|| execute_dp(input, 2));
@@ -56,6 +59,22 @@ impl OptimalSegment {
             Some(ots) => Ok(ots),
             None => Err(QrError::InputTooLong)
         }
+    }
+
+    pub fn mode_hint(&self) -> &Vec<Segment> {
+        &self.mode_hint
+    }
+
+    pub fn version(&self) -> &Version {
+        &self.version
+    }
+
+    pub fn ecc_level(&self) -> &ECCLevel {
+        &self.ecc_level
+    }
+
+    pub fn data_bit_len(&self) -> u16 {
+        self.data_bit_len
     }
 }
 
@@ -83,17 +102,17 @@ fn first_column() -> [Cell; 4] {
         }];
 }
 
-fn execute_dp(input: &str, version_block: usize) -> Option<OptimalSegment> {
+fn execute_dp(input: &str, version_block: usize) -> Option<OptimalSegmentHint> {
     let dp_column = first_column();
     let input_size = input.chars().count();
     let chars = input.chars().collect::<Vec<char>>();
 
     let mut dp_table = vec![dp_column; input_size + 1];
     
-    dp_table[0][0].cost = (MODE_INDICATOR as u32 + MODE_CCI[version_block][0]) * 6;
-    dp_table[0][1].cost = (MODE_INDICATOR as u32 + MODE_CCI[version_block][1]) * 6;
-    dp_table[0][2].cost = (MODE_INDICATOR as u32 + MODE_CCI[version_block][2]) * 6;
-    dp_table[0][3].cost = (MODE_INDICATOR as u32 + MODE_CCI[version_block][3]) * 6;
+    dp_table[0][0].cost = (MODE_INDICATOR_LEN as u32 + MODE_CCI_LEN[version_block][0]) * 6;
+    dp_table[0][1].cost = (MODE_INDICATOR_LEN as u32 + MODE_CCI_LEN[version_block][1]) * 6;
+    dp_table[0][2].cost = (MODE_INDICATOR_LEN as u32 + MODE_CCI_LEN[version_block][2]) * 6;
+    dp_table[0][3].cost = (MODE_INDICATOR_LEN as u32 + MODE_CCI_LEN[version_block][3]) * 6;
 
     // iterate over the cells i
     for i in 1..=input_size {
@@ -106,7 +125,7 @@ fn execute_dp(input: &str, version_block: usize) -> Option<OptimalSegment> {
                 continue;
             }
 
-            let seal_cost = (min_seal.cost) + ((MODE_INDICATOR as u32 + MODE_CCI[version_block][j]) * 6);
+            let seal_cost = (min_seal.cost) + ((MODE_INDICATOR_LEN as u32 + MODE_CCI_LEN[version_block][j]) * 6);
             let extend_cost = dp_table[i - 1][j].cost;
 
             if seal_cost < extend_cost {
@@ -130,9 +149,10 @@ fn execute_dp(input: &str, version_block: usize) -> Option<OptimalSegment> {
         .map(|version| Version::new(version).expect("VERSION_BLOCKS only spans 1..=40"))
         .find(|version| min_cost <= lookups::version_data_bits(*version, ECCLevel::L) as u32)?;
 
-    let mut optimal_segmentation = OptimalSegment::new(lowest_ver);
+    let mut optimal_segmentation = OptimalSegmentHint::new(lowest_ver);
     optimal_segmentation.mode_hint = construct_optimal_segment(&dp_table, input_size, min_index);
     optimal_segmentation.ecc_level = probe_ecc_level_raise(min_cost, optimal_segmentation.version, optimal_segmentation.ecc_level);
+    optimal_segmentation.data_bit_len = min_cost as u16;
 
     return Some(optimal_segmentation);
 }
@@ -216,4 +236,5 @@ fn min_seal(column: &[Cell; 4]) -> Cell {
 }
 
 #[cfg(test)]
+#[path ="./tests/optimal_segmentation.rs"]
 mod tests;

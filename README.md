@@ -25,6 +25,7 @@ I have used the following "AI" tools in the specified capacity.
 1. **Anthropic's Claude**:
     - Claude Code was used in [`optimal_segmentation.rs`](./qr-core/src/optimal_segmentation.rs) to correct the method `probe_ecc_level_raise`.
     - Claude Code was used in [`encoding.rs`](./qr-core/src/encoding.rs) to introduce the `Version` struct and remove redundant error handlings.
+    - Claude Code was used to generate the constant lookup tables in [`lookups.rs](./qr-core/src/lookups.rs).
     - Claude chat was used to understand the Optimal Text Segmentation and develop the algorithm to implement.
     - Claude Code was used in [optimal_segmenation/tests.rs](./qr-core/src/optimal_segmentation/tests.rs) to write comprehensive test cases for all the text segmenation scenarios.
 2. **Google's Gemini**:
