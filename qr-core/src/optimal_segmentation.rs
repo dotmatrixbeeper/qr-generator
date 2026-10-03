@@ -19,7 +19,7 @@ impl Cell {
 #[derive(Debug, Clone, Copy)]
 pub struct Segment {
     mode: Mode,
-    start: usize,
+    start: usize,           // 0 indexed
     end: usize
 }
 

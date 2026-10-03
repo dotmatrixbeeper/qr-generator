@@ -23,3 +23,6 @@ target
 
 # Ignore ods files for design
 *.ods
+
+# Ignore sublime workspace config
+*.sublime-*

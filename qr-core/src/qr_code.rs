@@ -76,7 +76,7 @@ impl Mode {
                 (alphanumeric_value(chunk[0]).unwrap() as u16 * 45) + alphanumeric_value(chunk[1]).unwrap() as u16
             },
             1 => {
-                alphanumeric_value(chunk[1]).unwrap() as u16
+                alphanumeric_value(chunk[0]).unwrap() as u16
             },
             _ => panic!("invalid alphanumeric chunk. maximm of two chars can be grouped in alphanumeric mode.")
         }
