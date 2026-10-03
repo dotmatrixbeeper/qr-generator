@@ -1,5 +1,5 @@
 # qr-generator
-A QR Code generator in Rust, written from scratch, ISO/IEC 18004-compliant. Includes a core encoder, CLI, and HTTP Service.
+A QR Code generator in Rust, written from scratch, (almost) ISO/IEC 18004-compliant, except ECI header. Includes a core encoder, CLI, and HTTP Service.
 
 ## Current Progress
 - [x] Optimal Text Segmentation

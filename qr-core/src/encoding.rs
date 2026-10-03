@@ -100,16 +100,16 @@ fn encode(offset: &mut u8, encoded: &mut Vec<u8>, mut value: u16, mut bit_count:
 
 fn termination_zeros(lb_offset: &mut u8, encoded: &mut Vec<u8>, segment_hint: &OptimalSegmentHint) {
     let mut zero_count = 0;
+    let encoded_bit_len = ((encoded.len() * 8) as u16) - (*lb_offset as u16);
     let version_bits = lookups::version_data_bits(*segment_hint.version(), *segment_hint.ecc_level());
-    if segment_hint.data_bit_len() < version_bits {
-        let overshoot = version_bits - segment_hint.data_bit_len();
+    debug_assert!(encoded_bit_len <= version_bits, "payload of {encoded_bit_len} bits overflows {version_bits}-bit symbol");
+    if encoded_bit_len < version_bits {
+    let overshoot = version_bits - encoded_bit_len;
         zero_count = if overshoot > 4 { 4 } else { overshoot };
     }
 
     encode(lb_offset, encoded, 0b000_0000, zero_count as i8);
-    if *lb_offset > 0 {
-        *lb_offset = 0;
-    }
+    *lb_offset = 0;
 }
 
 fn pad_bytes(encoded: &mut Vec<u8>, version_bits: u16) {
